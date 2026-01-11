@@ -84,11 +84,12 @@ class FeatureExtractor:
         self.month_sin = None
         self.month_cos = None
 
-    def compute_window(self, w: Sequence[float], num_month: int) -> Features:
+    def compute_window(self, w: List[float], num_month: int) -> Features:
         """ Вычисление фичей для окна значений.
 
         :param w: Окно прошлых значений, для которого вычисляются фичи.
-        :param num_month: Номер месяца для которого делается прогноз.
+                  [16.0, 23.0, 17.0, 27.0, 11.0, 16.0, 19.0, 21.0, ...]
+        :param num_month: Номер месяца для которого делается прогноз. -- 11
         :return: Экземпляр класса Features
         """
 
