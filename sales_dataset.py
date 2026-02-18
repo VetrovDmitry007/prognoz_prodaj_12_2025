@@ -1,36 +1,142 @@
-import datetime
-
+import re
+from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 from typing import Tuple, List, Dict
 from dateutil.relativedelta import relativedelta
-
 from window_features import FeatureExtractor
+
+
+@dataclass(slots=True)
+class LastWindow:
+    """
+    window_sale -- Продажи за последние 12 мес
+                   [16.0, 23.0, 17.0, 27.0, 11.0, 16.0, 19.0, 21.0, ...]
+    month_predict -- Номер месяца для которого делается прогноз
+    """
+    window_sale: list[int]
+    month_predict: int
+
 
 class SalesDataset:
     """
-    Класс для создания датасета динамики продаж.
+    Класс создания датасета для обучения модели прогноза динамики продаж.
     Преобразует временные ряды продаж в формат признаков (X) и целевой переменной (y).
+
+    Варианты выходных данных:
+    --------------------
+    1. self.all_windows_to_predict -- Продажи в разрезе аптек с разбивкой на окна по 12 месяцев
+        [{'mdlp_id': 127357, 'num_window': 25,
+         'window': [('2023-01-01', 7.0),
+           ('2023-02-01', 2.0), ('2023-03-01', 3.0), ('2023-04-01', 8.0),
+           ('2023-05-01', 3.0), ('2023-06-01', 15.0), ('2023-07-01', 5.0),
+           ('2023-08-01', 2.0), ('2023-09-01', 11.0), ('2023-10-01', 22.0),
+           ('2023-11-01', 7.0), ('2023-12-01', 9.0)]}, ...]
+
+    2. self.get_last_window(mdlp_id=127357) -- Продажи конкретной аптеки с разбивкой на окна по 12 месяцев
+       Структура аналогична self.all_windows_to_predict
+
+    3. self.load_data_regress() -- Возвращает данные в формате (X, y) для задачи регрессии
+    4. self.load_data_class() -- Возвращает данные в формате (X, y) для задачи бинарной классификации
     """
 
-    def __init__(self, sales_df: pd.DataFrame, start_date: str, cn_mes: int):
-        self.cn_mes = cn_mes
-        self.start_date = start_date
+    def __init__(self, sales_df: pd.DataFrame, start_date: str = None):
+        cn_mes = self.get_date_column(sales_df)
+        if not start_date:
+            self.start_date = self.get_start_date(sales_df)
+        else:
+            self.start_date = start_date
+
         self.sales_df = sales_df.copy()
-        # self._validate_data()
         self.ft = FeatureExtractor()
-        self.all_windows = self._prepare_data()
-        self._build_features(self.all_windows)
+        # Окна для обучения
+        self.all_windows_to_train = self._prepare_data_train(sales_df, self.start_date, cn_mes)
+        # Окна для прогноза
+        self.all_windows_to_predict = self._prepare_data_predict(sales_df, self.start_date, cn_mes)
+        self._build_features(self.all_windows_to_train)
 
-    def _prepare_data(self):
-        date_0 = datetime.datetime.strptime(self.start_date, '%Y-%m-%d')
-        ls_date = [(date_0 + relativedelta(months=num_mes)).strftime('%Y-%m-%d') for num_mes in range(self.cn_mes)]
+    def get_start_date(self, df: pd.DataFrame):
+        """ Наименование столбца с минимальной датой
 
-        df_stable = self.sales_df[self.sales_df['class'] == 'Стабильная'][ls_date]
+        """
+        pat = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+        date_cols = [c for c in df.columns if pat.fullmatch(c)]
+
+        if date_cols:
+            dts = pd.to_datetime(date_cols, format='%Y-%m-%d', errors='coerce')
+            min_col = dts.min().strftime('%Y-%m-%d')
+        else:
+            min_col = None
+
+        return min_col
+
+    def get_date_column(self, df: pd.DataFrame):
+        """ Кол-во столбцов в формате 2023-01-20
+
+        """
+        pat = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+        date_cols = [c for c in df.columns if pat.fullmatch(c)]
+        count_date_cols = len(date_cols)
+        return count_date_cols
+
+    def _prepare_data_predict(self, sales_df: pd.DataFrame, start_date: str, cn_mes: int) -> list[dict]:
+        """ Преобразует DataFrame в список окон. Для одной аптеки формируется несколько окон.
+            !!! Подготовка данных для прогноза
+
+        :param sales_df: Исходные данные
+        :param start_date: Дата начала выборки
+        :param cn_mes: Размер выборки в месяцах
+
+        :result: Список окон
+                [{'mdlp_id': 166, 'num_window': 1, 'window': [('месяц_продаж', 'объём_продаж'), ..]}, ...]
+                mdlp_id -- id аптеки
+                num_window -- номер окна
+                window -- окно с данными о 12-ти месяцев продаж
+        """
+        date_0 = pd.to_datetime(start_date).date()
+        ls_date = [(date_0 + relativedelta(months=num_mes)).strftime('%Y-%m-%d') for num_mes in range(cn_mes)]
+        ls_date.append('location_mdlp_id')
+
+        # DataFrame --> [[('2024-01-01', 18.0), ('2024-02-01', 7.0), ('2024-03-01', 14.0), ('2024-04-01', 15.0) ...]]
+        # df_stable = sales_df[sales_df['class'] == 'Стабильная'][ls_date]
+        df_stable = sales_df.copy()[ls_date]
         filtered_df = df_stable.dropna(subset=ls_date)
         ls_rec_dict = filtered_df.to_dict('records')
         ls_rec_tuples = [list(rec.items()) for rec in ls_rec_dict]
 
+        # [('месяц_продаж', 'объём_продаж'), ..] --> {'target_val': ('2025-01-01', 21.0), 'window(12)': [('месяц_продаж', 'объём_продаж'), ..]}
+        all_windows = []
+        for prod_aptek in ls_rec_tuples:
+            ls_windows = self._sliding_windows_prd(prod_aptek, window=12, step=1)
+            all_windows.extend(ls_windows)
+
+        return all_windows
+
+    def _prepare_data_train(self, sales_df: pd.DataFrame, start_date: str, cn_mes: int) -> list[dict]:
+        """ Преобразует DataFrame в список окон
+            {'target_val': ('2025-01-01', 21.0), 'window': [('месяц_продаж', 'объём_продаж'), ..]}
+            !!! Подготовка данных для обучения
+
+        :param sales_df: Исходные данные
+        :param start_date: Дата начала выборки
+        :param cn_mes: Размер выборки в месяцах
+
+        :result: Список окон
+                [{'target_val': ('2025-01-01', 21.0), 'window(12)': [('месяц_продаж', 'объём_продаж'), ..]}, ...]
+                target_val -- значение целевой переменной
+                window -- окно с данными о 12-ти месяцев продаж
+        """
+        date_0 = pd.to_datetime(start_date).date()
+        ls_date = [(date_0 + relativedelta(months=num_mes)).strftime('%Y-%m-%d') for num_mes in range(cn_mes)]
+
+        # DataFrame --> [[('2024-01-01', 18.0), ('2024-02-01', 7.0), ('2024-03-01', 14.0), ('2024-04-01', 15.0) ...]]
+        # df_stable = sales_df[sales_df['class'] == 'Стабильная'][ls_date]
+        df_stable = sales_df.copy()[ls_date]
+        filtered_df = df_stable.dropna(subset=ls_date)
+        ls_rec_dict = filtered_df.to_dict('records')
+        ls_rec_tuples = [list(rec.items()) for rec in ls_rec_dict]
+
+        # [('месяц_продаж', 'объём_продаж'), ..] --> {'target_val': ('2025-01-01', 21.0), 'window(12)': [('месяц_продаж', 'объём_продаж'), ..]}
         all_windows = []
         for prod_aptek in ls_rec_tuples:
             ls_windows = self._sliding_windows(prod_aptek, window=12, step=1)
@@ -41,6 +147,7 @@ class SalesDataset:
     def _sliding_windows(self, data: List, window: int, step: int = 1) -> List[Dict]:
         """ Деление списка [('месяц_продаж', 'объём_продаж'), ..] на список окон.
             Каждая запись исходного списка -- продажи одной аптеки за N месяцев
+            !!! Подготовка данных для обучения
 
         :param data: Исходный список
         :param window: Размер окна
@@ -68,7 +175,41 @@ class SalesDataset:
 
         return result
 
-    def load_data_class(self) -> Tuple[np.ndarray, np.ndarray]:
+    def _sliding_windows_prd(self, data: List, window: int, step: int = 1) -> List[Dict]:
+        """ Деление списка [('месяц_продаж', 'объём_продаж'), ..] на список окон.
+            Каждая запись исходного списка -- продажи одной аптеки за N месяцев
+            !!! Подготовка данных для прогноза
+
+        :param data: Исходный список
+        :param window: Размер окна
+        :param step: Шаг сдвига окна
+        :param location_mdlp_id: id аптеки
+
+        :return: Список окон.
+        """
+        mdlp_id = int(data.pop()[1])
+
+        ls_window = []
+        n = len(data)
+        for i in range(0, n, step):
+            w = data[i:i + window]
+            if len(w) < window:
+                break
+            ls_window.append(w)
+
+        # Заполнение "кол-ва продаж"
+        result = []
+        num_window = 1
+        while len(ls_window):
+            one_window = ls_window.pop()
+            dc = {'window': one_window, 'mdlp_id': mdlp_id, 'num_window': num_window}
+            num_window += 1
+            result.append(dc)
+
+        return result
+
+    @property
+    def data_class(self) -> Tuple[np.ndarray, np.ndarray]:
         """
         Возвращает данные в формате (X, y) для задачи бинарной классификации
 
@@ -79,7 +220,8 @@ class SalesDataset:
         """
         return self.data, self.target_class
 
-    def load_data_regress(self) -> Tuple[np.ndarray, np.ndarray]:
+    @property
+    def data_regress(self) -> Tuple[np.ndarray, np.ndarray]:
         """
         Возвращает данные в формате (X, y) для задачи регрессии
 
@@ -91,7 +233,7 @@ class SalesDataset:
         return self.data, self.target_regress
 
     def _build_features(self, all_windows):
-        """ Подготовка данных
+        """ Построитель данных (X, y) для задач регрессии и классификации
 
         target_class <--
             1 -- продажи упали
@@ -112,14 +254,14 @@ class SalesDataset:
             features = ft_features.to_list()
 
             last_val = dc_window['window'][-1][1]
-            target_val =  dc_window['target_val'][1]
+            target_val = dc_window['target_val'][1]
 
             if target_val < last_val:
-                target_class = 1 # продажи упали
+                target_class = 1  # продажи упали
             elif target_val > last_val:
-                target_class = 2 # продажи выросли
+                target_class = 2  # продажи выросли
             else:
-                target_class = 0 # продажи не изменились
+                target_class = 0  # продажи не изменились
 
             X_data.append(features)
             y_data_class.append(target_class)
@@ -129,11 +271,27 @@ class SalesDataset:
         self.target_class = np.array(y_data_class)
         self.target_regress = np.array(y_data_regress)
 
+    def get_last_window(self, mdlp_id: int) -> LastWindow:
+        """ Возвращает окно продаж последних 12-и месяцев для заданной mdlp
+
+        :param mdlp_id: id аптеки
+        :return: (window_sale=, month_predict=)
+                window_sale -- Продажи за последние 12 мес
+                               [16.0, 23.0, 17.0, 27.0, 11.0, 16.0, 19.0, 21.0, ...]
+                month_predict -- Номер месяца для которого делается прогноз
+        """
+        df = pd.DataFrame(self.all_windows_to_predict)
+        df = df[df['mdlp_id'] == mdlp_id]
+        rec = df.to_dict('records')[-1]
+        window_sale = [i[1] for i in rec['window']]
+        date_sale = [i[0] for i in rec['window']]
+        date_predict = (pd.to_datetime(date_sale).max() + relativedelta(months=1)).strftime('%Y-%m-%d')
+        month_predict = int(date_predict.split('-')[1])
+        return LastWindow(window_sale=window_sale, month_predict=month_predict)
+
 
 if __name__ == '__main__':
     df_xls = pd.read_excel('ipynb/temp_8_9_10_итог_с_июлем.xlsx')
-    ds = SalesDataset(df_xls, start_date='2024-01-01', cn_mes=19)
+    ds = SalesDataset(df_xls)
     # X, y = ds.load_data_class()
     X, y = ds.load_data_regress()
-
-

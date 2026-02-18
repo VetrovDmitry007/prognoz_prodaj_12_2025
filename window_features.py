@@ -1,3 +1,14 @@
+"""
+Создание фичей на основе данных продаж окна 12 месяцев.
+
+Исходные данные:
+1. Список (окно) из продаж 12 месяцев
+2. Номер месяца для которого делается прогноз
+
+Выходные данные:
+1. Набор фичей для модели регрессии
+"""
+
 from __future__ import annotations
 from dataclasses import dataclass, asdict
 from typing import Sequence, List, Dict, Optional
@@ -195,8 +206,8 @@ class FeatureExtractor:
         :param num_month: Номер месяца для которого делается прогноз
         """
         ang = 2 * np.pi * (num_month / 12.0)
-        self.month_sin = np.sin(ang)
-        self.month_cos= np.cos(ang)
+        self.month_sin = float(np.sin(ang))
+        self.month_cos= float(np.cos(ang))
 
     def seasona_lag12_target(self,  w: Sequence[float]):
         """ Вычисляет, сколько обычно продаётся в прогнозируемый месяц.

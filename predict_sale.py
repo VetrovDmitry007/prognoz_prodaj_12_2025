@@ -5,10 +5,13 @@ from typing import Dict, List
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
-from window_features import FeatureExtractor
+from window_features import FeatureExtractor, Features
 
 
 class PredictSale:
+    """
+
+    """
     def __init__(self, config: Dict) -> None:
         model_file = config['model_file']
         file_source = config['file_source']
@@ -77,15 +80,16 @@ class PredictSale:
 
         return ls_dates
 
-    def predict(self, num_rec: int):
-        """
-        !!! исправить
+    def predict_one(self, num_rec: int):
+        """ Прогноз для записи с номером num_rec
+
         """
         data_window = self.ls_rec[num_rec]
-        features = self.ft.compute_window(data_window, num_month=self.num_month)
-        X = np.ndarray(features)
+        features:Features = self.ft.compute_window(data_window, num_month=self.num_month)
+        X = np.array(features.to_list(), dtype=float)
+        X = X.reshape(1,-1)
         y_pred = self.model.predict(X)
-        return y_pred
+        return round(float(y_pred[0]),1)
 
 
 if __name__ == '__main__':
@@ -96,4 +100,5 @@ if __name__ == '__main__':
             'file_source': 'ipynb/temp_8_9_10_итог_с_июлем.xlsx'
             }
     predict_sale_obj = PredictSale(config)
-    predict_sale_obj.predict(num_rec=1)
+    res = predict_sale_obj.predict_one(num_rec=2)
+    print(res)
