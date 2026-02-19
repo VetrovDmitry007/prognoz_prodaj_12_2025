@@ -1,3 +1,4 @@
+import random
 import re
 from dataclasses import dataclass
 import pandas as pd
@@ -16,6 +17,16 @@ class LastWindow:
     """
     window_sale: list[int]
     month_predict: int
+
+@dataclass(slots=True)
+class SplitDataSet:
+    """ Класс DataSet продаж аптек
+
+    """
+    X_train: np.ndarray = None
+    X_test: np.ndarray = None
+    y_train: np.ndarray = None
+    y_test: np.ndarray = None
 
 
 class SalesDataset:
@@ -41,6 +52,8 @@ class SalesDataset:
     """
 
     def __init__(self, sales_df: pd.DataFrame, start_date: str = None):
+        self.sale_dataset = SplitDataSet()
+
         cn_mes = self.get_date_column(sales_df)
         if not start_date:
             self.start_date = self.get_start_date(sales_df)
@@ -48,12 +61,15 @@ class SalesDataset:
             self.start_date = start_date
 
         self.sales_df = sales_df.copy()
+        self.ls_mdlp_id = self.sales_df['location_mdlp_id'].to_list()
         self.ft = FeatureExtractor()
         # Окна для обучения
+        print("Start windows dataset")
         self.all_windows_to_train = self._prepare_data_train(sales_df, self.start_date, cn_mes)
+        self.split_windows_dataset(self.all_windows_to_train)
         # Окна для прогноза
         self.all_windows_to_predict = self._prepare_data_predict(sales_df, self.start_date, cn_mes)
-        self._build_features(self.all_windows_to_train)
+
 
     def get_start_date(self, df: pd.DataFrame):
         """ Наименование столбца с минимальной датой
@@ -100,11 +116,11 @@ class SalesDataset:
         # DataFrame --> [[('2024-01-01', 18.0), ('2024-02-01', 7.0), ('2024-03-01', 14.0), ('2024-04-01', 15.0) ...]]
         # df_stable = sales_df[sales_df['class'] == 'Стабильная'][ls_date]
         df_stable = sales_df.copy()[ls_date]
-        filtered_df = df_stable.dropna(subset=ls_date)
+        filtered_df = df_stable.fillna(0)
         ls_rec_dict = filtered_df.to_dict('records')
         ls_rec_tuples = [list(rec.items()) for rec in ls_rec_dict]
 
-        # [('месяц_продаж', 'объём_продаж'), ..] --> {'target_val': ('2025-01-01', 21.0), 'window(12)': [('месяц_продаж', 'объём_продаж'), ..]}
+        # [('месяц_продаж', 'объём_продаж'), ..] --> {'target_val': ('2025-01-01', 21.0), 'window': [('месяц_продаж', 'объём_продаж'), ..]}
         all_windows = []
         for prod_aptek in ls_rec_tuples:
             ls_windows = self._sliding_windows_prd(prod_aptek, window=12, step=1)
@@ -114,7 +130,7 @@ class SalesDataset:
 
     def _prepare_data_train(self, sales_df: pd.DataFrame, start_date: str, cn_mes: int) -> list[dict]:
         """ Преобразует DataFrame в список окон
-            {'target_val': ('2025-01-01', 21.0), 'window': [('месяц_продаж', 'объём_продаж'), ..]}
+            [{'num_window': 1, 'target_val': ('2025-01-01', 21.0), 'window': [('месяц_продаж', 'объём_продаж'), ..]},.]
             !!! Подготовка данных для обучения
 
         :param sales_df: Исходные данные
@@ -122,7 +138,8 @@ class SalesDataset:
         :param cn_mes: Размер выборки в месяцах
 
         :result: Список окон
-                [{'target_val': ('2025-01-01', 21.0), 'window(12)': [('месяц_продаж', 'объём_продаж'), ..]}, ...]
+                [{'num_window': 1, 'target_val': ('2025-01-01', 21.0), 'window': [('месяц_продаж', 'объём_продаж'), ..]}, ...]
+                num_window -- номер окна
                 target_val -- значение целевой переменной
                 window -- окно с данными о 12-ти месяцев продаж
         """
@@ -132,7 +149,7 @@ class SalesDataset:
         # DataFrame --> [[('2024-01-01', 18.0), ('2024-02-01', 7.0), ('2024-03-01', 14.0), ('2024-04-01', 15.0) ...]]
         # df_stable = sales_df[sales_df['class'] == 'Стабильная'][ls_date]
         df_stable = sales_df.copy()[ls_date]
-        filtered_df = df_stable.dropna(subset=ls_date)
+        filtered_df = df_stable.fillna(0)
         ls_rec_dict = filtered_df.to_dict('records')
         ls_rec_tuples = [list(rec.items()) for rec in ls_rec_dict]
 
@@ -167,10 +184,12 @@ class SalesDataset:
 
         # Заполнение "прогнозированное значение"
         result = []
+        num_window = 1
         while len(ls_window):
             one_window = ls_window.pop()
-            dc = {'window': one_window, 'target_val': last_val}
+            dc = {'window': one_window, 'target_val': last_val, 'num_window': num_window}
             last_val = one_window[-1]
+            num_window += 1
             result.append(dc)
 
         return result
@@ -232,7 +251,41 @@ class SalesDataset:
         """
         return self.data, self.target_regress
 
-    def _build_features(self, all_windows):
+    def split_windows_dataset(self, all_windows_to_train: list[dict], test_size=0.2, random_state=42):
+        """ 1. Разбивка окон данных на train и test
+            2. Формирование: X_train, y_train, X_test, y_test
+
+        :param all_windows_to_train:
+                 [{'num_window': 1, 'target_val': ('2025-01-01', 21.0),
+                  'window': [('месяц_продаж', 'объём_продаж'), ..]},.]
+        :return: X_train, y_train, X_test, y_test
+        """
+        random.seed(random_state)
+        cn_all = len(all_windows_to_train)
+        cn_test = round(cn_all * test_size)
+
+        data_sorted = sorted(all_windows_to_train, key=lambda x: x["num_window"])
+        windows_test = data_sorted[:cn_test]
+        windows_train = data_sorted[cn_test:]
+        random.shuffle(windows_test)
+        random.shuffle(windows_train)
+
+        X_test, y_test = self._build_features(windows_test)
+        X_train, y_train = self._build_features(windows_train)
+
+        self.split_dataset = SplitDataSet(X_train=X_train,
+                                         X_test=X_test,
+                                         y_train=y_train,
+                                         y_test=y_test)
+
+    def get_split_dataset(self)-> SplitDataSet:
+        """
+
+        """
+        print("Split dataset")
+        return self.split_dataset
+
+    def _build_features(self, windows_split: list[dict]):
         """ Построитель данных (X, y) для задач регрессии и классификации
 
         target_class <--
@@ -240,13 +293,14 @@ class SalesDataset:
             2 -- продажи выросли
             0 -- продажи не изменились
 
-        :param all_windows: {'target_val': ('2025-07-01', 20.0), 'window': [('2024-07-01', 23.0), ('2024-08-01', 25.0), ..]}
+        :param all_windows: {'num_window': 1, 'target_val': ('2025-07-01', 20.0),
+                                    'window': [('2024-07-01', 23.0), ('2024-08-01', 25.0), ..]}
         """
         X_data = []
         y_data_class = []
         y_data_regress = []
 
-        for dc_window in all_windows:
+        for dc_window in windows_split:
             data_windows = [w[1] for w in dc_window['window']]
             predict_date = dc_window['target_val'][0]
             num_month = int(predict_date.split('-')[1])
@@ -268,8 +322,9 @@ class SalesDataset:
             y_data_regress.append(target_val)
 
         self.data = np.array(X_data)
-        self.target_class = np.array(y_data_class)
+        # self.target_class = np.array(y_data_class)
         self.target_regress = np.array(y_data_regress)
+        return  self.data, self.target_regress
 
     def get_last_window(self, mdlp_id: int) -> LastWindow:
         """ Возвращает окно продаж последних 12-и месяцев для заданной mdlp

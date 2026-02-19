@@ -152,13 +152,12 @@ class FeatureExtractor:
             3. mom6 - импульс за 6 месяцев => индекс -1 и -7
         """
         x = self._w
-        eps = self.epsilon
 
         last = float(x[-1])
         prev = float(x[-2])
         self.delta1 = float(last - prev)
         # Лог-доходность (стабилизация eps)
-        self.logret1 = float(np.log(last + eps) - np.log(prev + eps))
+        self.logret1 = float(np.log1p(last) - np.log1p(prev))
         # Mom3: импульс за 3 месяца (текущее - значение 3 месяца назад)
         # при месячных данных: t - (t-3) => индекс -1 и -4
         self.mom3 = float(last - float(x[-4]))
