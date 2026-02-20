@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from typing import Tuple, List, Dict
 from dateutil.relativedelta import relativedelta
+
 from window_features import FeatureExtractor
 
 
@@ -114,7 +115,6 @@ class SalesDataset:
         ls_date.append('location_mdlp_id')
 
         # DataFrame --> [[('2024-01-01', 18.0), ('2024-02-01', 7.0), ('2024-03-01', 14.0), ('2024-04-01', 15.0) ...]]
-        # df_stable = sales_df[sales_df['class'] == 'Стабильная'][ls_date]
         df_stable = sales_df.copy()[ls_date]
         filtered_df = df_stable.fillna(0)
         ls_rec_dict = filtered_df.to_dict('records')
@@ -147,7 +147,6 @@ class SalesDataset:
         ls_date = [(date_0 + relativedelta(months=num_mes)).strftime('%Y-%m-%d') for num_mes in range(cn_mes)]
 
         # DataFrame --> [[('2024-01-01', 18.0), ('2024-02-01', 7.0), ('2024-03-01', 14.0), ('2024-04-01', 15.0) ...]]
-        # df_stable = sales_df[sales_df['class'] == 'Стабильная'][ls_date]
         df_stable = sales_df.copy()[ls_date]
         filtered_df = df_stable.fillna(0)
         ls_rec_dict = filtered_df.to_dict('records')
@@ -337,7 +336,8 @@ class SalesDataset:
         """
         df = pd.DataFrame(self.all_windows_to_predict)
         df = df[df['mdlp_id'] == mdlp_id]
-        rec = df.to_dict('records')[-1]
+        rec = df.sort_values("num_window", ascending=True).iloc[0].to_dict()
+
         window_sale = [i[1] for i in rec['window']]
         date_sale = [i[0] for i in rec['window']]
         date_predict = (pd.to_datetime(date_sale).max() + relativedelta(months=1)).strftime('%Y-%m-%d')
@@ -346,7 +346,10 @@ class SalesDataset:
 
 
 if __name__ == '__main__':
-    df_xls = pd.read_excel('ipynb/temp_8_9_10_итог_с_июлем.xlsx')
-    ds = SalesDataset(df_xls)
-    # X, y = ds.load_data_class()
-    X, y = ds.load_data_regress()
+    from utils import pred_proc
+
+    df_conv = pred_proc('etl/final_report_2026-01-27.csv')
+    ds = SalesDataset(df_conv)
+    # res = ds.get_split_dataset()
+    res = ds.get_last_window(166)
+    print(res)

@@ -35,7 +35,7 @@ def create_dataset(split_dataset):
     return train_data, valid_data
 
 
-def smape(y_true, y_pred, eps=1e-8):
+def calc_smape(y_true, y_pred, eps=1e-8):
     """ Symmetric MAPE -- устойчива даже если факт и прогноз 0
 
     """
@@ -49,14 +49,14 @@ def evaluate_model(y_true, y_pred, model_name):
     mse = mean_squared_error(y_true, y_pred)
     rmse = np.sqrt(mse)
     mae = mean_absolute_error(y_true, y_pred)
-    mape = smape(y_true, y_pred)
+    smape = calc_smape(y_true, y_pred)
     r2 = r2_score(y_true, y_pred)
 
     print(f"\n{model_name} Результаты:")
     print(f"Среднеквадратичная ошибка (MSE): {mse:.4f}")
     print(f"Корень из MSE (RMSE): {rmse:.4f}")
     print(f"Средняя абсолютная ошибка (MAE): {mae:.4f}")
-    print(f"Средняя абсолютная процентная ошибка (MAPE): {mape:.2f}%")
+    print(f"Средняя абсолютная процентная ошибка (SMAPE): {smape:.2f}%")
     print(f"Коэффициент детерминации (R²): {r2:.4f}")
 
     return {"MSE": mse, "RMSE": rmse, "MAE": mae, "R2": r2}
