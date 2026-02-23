@@ -9,8 +9,9 @@ from utils import pred_proc, create_dataset, evaluate_model
 def train(train_data, valid_data):
     # Параметры модели
     params = {
-        'objective': 'regression',
-        'metric': ['rmse', 'mae'],
+        "objective": "tweedie",
+        "tweedie_variance_power": 1.8,
+        "metric": ["tweedie", "rmse", "mae"],
         'learning_rate': 0.01,
         'max_depth': 5,
         'num_leaves': 31,
@@ -49,11 +50,3 @@ def pipeline():
 
 if __name__ == '__main__':
     pipeline()
-    """
-    LightGBM с ранней остановкой Результаты:
-    Среднеквадратичная ошибка (MSE): 60.7277
-    Корень из MSE (RMSE): 7.7928
-    Средняя абсолютная ошибка (MAE): 2.9667
-    Средняя абсолютная процентная ошибка (MAPE): 90.00%
-    Коэффициент детерминации (R²): 0.4776
-    """

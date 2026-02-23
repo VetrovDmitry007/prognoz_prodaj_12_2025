@@ -4,7 +4,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from sales_dataset import SalesDataset
-from utils import pred_proc
+from utils import pred_proc, evaluate_model
 from window_features import FeatureExtractor
 
 
@@ -54,7 +54,7 @@ def predict(sale_ds, model, mdlp_id):
     """
     X = _get_data_to_predict(sale_ds, mdlp_id)
     y_pred = model.predict(X)
-    result = round(y_pred[0])
+    result = max(0, round(y_pred[0]))
     return result
 
 
@@ -74,9 +74,36 @@ def export_result_predict():
     df.to_csv('result_predict.csv', index=False)
 
 
+def eval(file_sale: str, file_predict: str):
+    """  Оценка модели регрессии на основе файла продаж и файла прогнозов.
+
+    """
+    # Продажи(факт)
+    df_sale_true = pd.read_csv(file_sale)
+    df_sale_true = df_sale_true[(df_sale_true['exit_type'] == 'Продажа') & (
+        df_sale_true['Territory'].str.contains('moscow', case=False, na=False))]
+
+    # Продажи(прогноз)
+    df_sale_predict = pd.read_csv(file_predict)
+
+    # Продажи + Прогноз
+    df_merge = pd.merge(
+        df_sale_true,
+        df_sale_predict,
+        left_on='location_mdlp_id',
+        right_on='mdlp_id',
+        how='inner'  # inner join (только совпадающие записи)
+    )
+    de_merge = df_merge[['mdlp_id', '2026-01-01', 'sale']]
+    de_merge = de_merge.rename(columns={'2026-01-01': 'fact', 'sale': 'predict'})
+    de_merge = de_merge.fillna(0)
+
+    # Оценка прогноза
+    fact = de_merge['fact'].to_list()
+    predict = de_merge['predict'].to_list()
+    evaluate_model(fact, predict, 'LightGBM')
+
+
 if __name__ == '__main__':
     export_result_predict()
-
-
-
-
+    eval(file_sale='etl/sale_01_2026.csv', file_predict='result_predict.csv')

@@ -56,10 +56,9 @@ def evaluate_model(y_true, y_pred, model_name):
     print(f"Среднеквадратичная ошибка (MSE): {mse:.4f}")
     print(f"Корень из MSE (RMSE): {rmse:.4f}")
     print(f"Средняя абсолютная ошибка (MAE): {mae:.4f}")
-    print(f"Средняя абсолютная процентная ошибка (SMAPE): {smape:.2f}%")
+    print(f"Симетричная средняя абсолютная процентная ошибка (SMAPE): {smape:.2f}%")
     print(f"Коэффициент детерминации (R²): {r2:.4f}")
-
-    return {"MSE": mse, "RMSE": rmse, "MAE": mae, "R2": r2}
+    # return {"MSE": mse, "RMSE": rmse, "MAE": mae, "R2": r2}
 
 
 def pred_proc(file_name: str):
@@ -69,6 +68,7 @@ def pred_proc(file_name: str):
         3. (не использовать) В последнем учтённом месяце были продажи
         4. Конвертирование дат "01_2023" -> "2023-01-01"
 
+    :param file_name: Файл продаж с 2023-01-01 по 2025-01-01
     :return: DataFrame
     """
     df_csv = pd.read_csv(file_name)
