@@ -43,6 +43,10 @@ class Features:
     MonthSin: float
     Lag12Target: float
 
+    IsJanuary: int
+    NonZeroVal: float
+    LastNonZero: int
+
     @classmethod
     def names(cls) -> List[str]:
         # Важно: стабильный порядок для ML
@@ -51,7 +55,9 @@ class Features:
             "Delta1", "LogRet1", "Mom3", "Mom6",
             "Slope10", "R2_Trend", "ZResLast",
             "UpShare", "SignChanges", "MaxDrawdown",
-            "MonthCos", "MonthSin", "Lag12Target"
+            "MonthCos", "MonthSin", "Lag12Target",
+            "IsJanuary", "NonZeroVal"
+            # , "LastNonZero"
         ]
 
     def to_dict(self) -> Dict[str, float]:
@@ -94,6 +100,10 @@ class FeatureExtractor:
         self.max_drawdown = None
         self.month_sin = None
         self.month_cos = None
+        self.lag12_target = None
+        self.is_january = None
+        self.nonzero_val = None
+        # self.last_nonzero_val = None
 
     def compute_window(self, w: List[float], num_month: int) -> Features:
         """ Вычисление фичей для окна значений.
@@ -117,6 +127,9 @@ class FeatureExtractor:
         self._calc_drawdown()
         self.month_sin_cos(num_month)
         self.seasona_lag12_target(w)
+        self.ch_is_january(num_month)
+        self.non_zero_share(w)
+        self.last_non_zero_ago(w)
 
         return self.to_features()
 
@@ -217,6 +230,36 @@ class FeatureExtractor:
         """
         self.lag12_target = w[0]
 
+    def ch_is_january(self, num_month):
+        """ Является ли прогнозируемый месяц январём"""
+        self.is_january = 1 if num_month == 1 else 0
+
+    def non_zero_share(self, w: Sequence[float]):
+        """ Доля месяцев с ненулевыми продажами.
+
+        :param w: Последовательность продаж по месяцам (окно)
+        """
+        arr = np.asarray(w, dtype=float)
+        self.non_zero_val = float(np.mean(arr > 0))
+
+    def last_non_zero_ago(self, w: Sequence[float]):
+        """
+        Сколько месяцев назад был последний ненулевой месяц в окне.
+        0 -> последний элемент окна, 1 -> предпоследний, ...
+        Если все значения -- 0 тогда last_non_zero = 12.
+        """
+        arr = np.asarray(w, dtype=float)
+        arr = np.nan_to_num(arr, nan=0.0)
+
+        mask = arr > 0
+        if not np.any(mask):
+            self.last_non_zero = 12
+            return
+
+        mask = arr > 0
+        last_idx = int(np.where(mask)[0][-1])  # индекс последнего ненуля в окне (с начала)
+        self.last_non_zero = int(len(arr) - 1 - last_idx)  # сколько месяцев назад от конца
+
     def _calc_trend(self) -> None:
         """ Вычисление:
             1. slope10 - наклон тренда, slope > 0 → тренд вверх (растёт)
@@ -273,7 +316,8 @@ class FeatureExtractor:
             self.delta1, self.logret1, self.mom3, self.mom6,
             self.slope10, self.r2_trend, self.z_res_last,
             self.up_share, self.sign_changes, self.max_drawdown,
-            self.month_sin, self.month_cos, self.lag12_target
+            self.month_sin, self.month_cos, self.lag12_target,
+            self.is_january, self.non_zero_val, self.last_non_zero
         ]
         if any(v is None for v in required):
             raise RuntimeError("Not all features computed")
@@ -296,7 +340,10 @@ class FeatureExtractor:
             MaxDrawdown=self.max_drawdown,
             MonthSin = self.month_sin,
             MonthCos = self.month_cos,
-            Lag12Target= self.lag12_target
+            Lag12Target= self.lag12_target,
+            IsJanuary= self.is_january,
+            NonZeroVal= self.non_zero_val,
+            LastNonZero= self.last_non_zero
         )
 
 

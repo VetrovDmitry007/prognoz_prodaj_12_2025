@@ -10,7 +10,7 @@ def train(train_data, valid_data):
     # Параметры модели
     params = {
         "objective": "tweedie",
-        "tweedie_variance_power": 1.8,
+        "tweedie_variance_power": 1.7,
         "metric": ["tweedie", "rmse", "mae"],
         'learning_rate': 0.01,
         'max_depth': 5,
@@ -36,6 +36,21 @@ def train(train_data, valid_data):
     return model_early_stop
 
 
+def gain(model):
+    """ Определение значимости признаков
+
+    """
+    gain = model.feature_importance(importance_type="gain")
+    names = model.feature_name()
+
+    fi = (
+        pd.DataFrame({"feature": names, "gain": gain})
+        .sort_values("gain", ascending=False)
+        .reset_index(drop=True)
+    )
+    print(fi)
+
+
 def pipeline():
     df_conv = pred_proc('etl/final_report_2026-01-27.csv')
     sale_ds = SalesDataset(df_conv)
@@ -46,6 +61,8 @@ def pipeline():
 
     y_pred = model.predict(split_dataset.X_test)
     evaluate_model(split_dataset.y_test, y_pred, "LightGBM с ранней остановкой")
+
+    gain(model)
 
 
 if __name__ == '__main__':

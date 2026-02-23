@@ -9,6 +9,8 @@ import lightgbm as lgb
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
+from window_features import Features
+
 
 def df_date_convert(df: pd.DataFrame):
     """ Конвертор столбцов 01_2023 --> 2023-01-01 """
@@ -28,9 +30,31 @@ def df_date_convert(df: pd.DataFrame):
 
 
 def create_dataset(split_dataset):
-    """ Создание dataset для модели градиентного бустинга задачи регрессии """
-    train_data = lgb.Dataset(split_dataset.X_train, label=split_dataset.y_train)
-    valid_data = lgb.Dataset(split_dataset.X_test, label=split_dataset.y_test, reference=train_data)
+    """Создание dataset для модели градиентного бустинга задачи регрессии"""
+    feature_names = Features.names()
+
+    # sanity-check: количество колонок должно совпадать
+    if split_dataset.X_train.shape[1] != len(feature_names):
+        raise ValueError(
+            f"X_train has {split_dataset.X_train.shape[1]} columns, "
+            f"but feature_names has {len(feature_names)}"
+        )
+
+    train_data = lgb.Dataset(
+        split_dataset.X_train,
+        label=split_dataset.y_train,
+        feature_name=feature_names,
+        free_raw_data=False,
+    )
+
+    valid_data = lgb.Dataset(
+        split_dataset.X_test,
+        label=split_dataset.y_test,
+        reference=train_data,
+        feature_name=feature_names,
+        free_raw_data=False,
+    )
+
     print("Create dataset")
     return train_data, valid_data
 
