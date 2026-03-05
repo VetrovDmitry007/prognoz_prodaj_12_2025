@@ -1,5 +1,3 @@
-import pandas as pd
-import numpy as np
 import lightgbm as lgb
 
 from sales_dataset import SalesDataset
@@ -31,7 +29,7 @@ def train(train_data, valid_data):
         ]
     )
 
-    model_early_stop.save_model("lgb_model_regress_2.txt")
+    model_early_stop.save_model("models/lgb_model_regress_2.txt")
     print("Save model")
     return model_early_stop
 

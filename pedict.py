@@ -58,20 +58,20 @@ def predict(sale_ds, model, mdlp_id):
     return result
 
 
-def export_result_predict():
+def export_result_predict(file_result: str):
     """ Прогноз продаж для last_mes + 1 по всем mdlp
         с выгрузкой в csv
 
     """
     sale_ds = init_dataset()
-    model = init_model('lgb_model_regress_2.txt')
+    model = init_model('models/lgb_model_regress_2.txt')
 
     ls_result = []
     for mdlp_id in tqdm(sale_ds.ls_mdlp_id):
         sale = predict(sale_ds, model, mdlp_id)
         ls_result.append({'mdlp_id': mdlp_id, 'sale': sale})
     df = pd.DataFrame(ls_result)
-    df.to_csv('result_predict.csv', index=False)
+    df.to_csv(file_result, index=False)
 
 
 def eval(file_sale: str, file_predict: str):
@@ -105,5 +105,5 @@ def eval(file_sale: str, file_predict: str):
 
 
 if __name__ == '__main__':
-    export_result_predict()
-    eval(file_sale='etl/sale_01_2026.csv', file_predict='result_predict.csv')
+    export_result_predict(file_result='data/result_predict.csv')
+    eval(file_sale='etl/sale_01_2026.csv', file_predict='data/result_predict.csv')
